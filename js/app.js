@@ -2992,7 +2992,10 @@ initializeApp();
     lines.push('', `Total : ${money(d.total)}`);
     return lines.join('\n');
   }
-
+function docName(data) {
+  return String(data.invoiceNumber || 'nota').replace(
+    /^INV-/, data.docType === 'Invoice' ? 'INV-' : 'NOT-');
+}
   function toFiles(canvases, data) {
     const prefix = String(data.invoiceNumber || 'nota').replace(
       /^INV-/, data.docType === 'Invoice' ? 'INV-' : 'NOT-');
@@ -3038,35 +3041,39 @@ initializeApp();
    
   /* ---------- print ---------- */
     async function printPages(canvases, data) {
-    if (data && window.matchMedia('(pointer: coarse)').matches) {
-      if (await shareFiles(canvases, data)) return;
-    }
-    const old = document.getElementById('notaPrintArea');
-    if (old) old.remove();
-
-    const area = document.createElement('div');
-    area.id = 'notaPrintArea';
-
-    const imgs = canvases.map(canvas => {
-      const img = new Image();
-      img.src = canvas.toDataURL('image/png');
-      area.appendChild(img);
-      return img;
-    });
-
-    document.body.appendChild(area);
-
-    await Promise.all(imgs.map(img =>
-      img.decode ? img.decode().catch(() => {}) : Promise.resolve()
-    ));
-
-    window.addEventListener('afterprint', () => {
-      setTimeout(() => area.remove(), 1000);
-    }, { once: true });
-
-    window.print();
+  if (data && window.matchMedia('(pointer: coarse)').matches) {
+    if (await shareFiles(canvases, data)) return;
   }
+  const old = document.getElementById('notaPrintArea');
+  if (old) old.remove();
 
+  const area = document.createElement('div');
+  area.id = 'notaPrintArea';
+
+  const imgs = canvases.map(canvas => {
+    const img = new Image();
+    img.src = canvas.toDataURL('image/png');
+    area.appendChild(img);
+    return img;
+  });
+
+  document.body.appendChild(area);
+
+  await Promise.all(imgs.map(img =>
+    img.decode ? img.decode().catch(() => {}) : Promise.resolve()
+  ));
+
+  // The PDF / print file name comes from the page title
+  const originalTitle = document.title;
+  if (data) document.title = docName(data);
+
+  window.addEventListener('afterprint', () => {
+    document.title = originalTitle;
+    setTimeout(() => area.remove(), 1000);
+  }, { once: true });
+
+  window.print();
+}
   async function runNota(base) {
            const details = await askDetails(
       base.customerType || ($('customerType') ? $('customerType').value : ''),
