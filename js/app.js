@@ -1309,6 +1309,95 @@ function setCartNo(no) {
   if (no) localStorage.setItem(CART_NO_KEY, no);
   else localStorage.removeItem(CART_NO_KEY);
 }
+
+/* ---------- used invoice numbers (per channel) ---------- */
+const USED_NOS_KEY = 'centi_catalog_used_nos_v1';
+let usedNos = readStorage(USED_NOS_KEY, {});
+if (!usedNos || typeof usedNos !== 'object' || Array.isArray(usedNos)) usedNos = {};
+
+// channel: 'telegram' or 'salesman'
+function markNoUsed(channel) {
+  const no = getCartNo();
+  usedNos[no] = { ...(typeof usedNos[no] === 'object' ? usedNos[no] : {}), [channel]: true };
+
+  const keys = Object.keys(usedNos);
+  if (keys.length > 500) {
+    keys.slice(0, keys.length - 500).forEach(key => delete usedNos[key]);
+  }
+  writeStorage(USED_NOS_KEY, usedNos);
+}
+
+function askResendOrNew(no) {
+  return new Promise(resolve => {
+    const id = currentLanguage === 'id';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'invoiceNoOverlay';
+    overlay.className = 'salesman-recipient-overlay';
+    overlay.innerHTML = `
+      <section class="salesman-recipient-dialog" role="dialog" aria-modal="true">
+        <h2>${id ? 'Nomor sudah terkirim' : 'Number already sent'}</h2>
+        <p class="order-prompt-text">
+          ${id
+            ? `Pesanan <strong>CAT-${esc(no)}</strong> sudah pernah dikirim. Apa yang ingin Anda lakukan?`
+            : `Order <strong>CAT-${esc(no)}</strong> was already sent. What do you want to do?`}
+        </p>
+        <div style="display:grid;gap:10px;margin-top:14px">
+          <button type="button" data-choice="resend"
+            style="min-height:46px;border:1px solid var(--line);border-radius:10px;
+                   background:#fff;color:var(--ink);font-weight:700">
+            ${id ? 'Kirim ulang (nomor sama)' : 'Resend (same number)'}
+          </button>
+          <button type="button" data-choice="new" class="primary-button"
+            style="min-height:46px">
+            ${id ? 'Buat nomor baru' : 'Create new number'}
+          </button>
+          <button type="button" data-choice="cancel"
+            style="min-height:42px;border:0;background:none;color:var(--muted);font-weight:700">
+            ${id ? 'Batal' : 'Cancel'}
+          </button>
+        </div>
+      </section>`;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('[data-choice]').forEach(button => {
+      button.addEventListener('click', () => {
+        overlay.remove();
+        resolve(button.dataset.choice);
+      });
+    });
+  });
+}
+
+// true = OK to continue, false = user cancelled
+async function ensureFreshCartNo(channel) {
+  const no = getCartNo();
+
+  if (!(usedNos[no] && usedNos[no][channel])) return true;
+
+  const choice = await askResendOrNew(no);
+
+  if (choice === 'new') {
+    setCartNo(newOrderNo());
+    return true;
+  }
+  return choice === 'resend';
+}
+function requireCustomer() {
+  const select = $('customerType');
+  if (select.value) return true;
+
+  showToast(t('selectCustomerFirst'));
+  select.focus();
+  select.style.outline = '2px solid #dc2626';
+  setTimeout(() => { select.style.outline = ''; }, 1500);
+  return false;
+}
+
+function savedTitle(order) {
+  return order.invoiceNumber || order.orderNo || order.name || 'Order';
+}
 function cartValues() {
   return Object.values(cart).filter(item => item.qty > 0);
 }
@@ -1423,11 +1512,16 @@ items.forEach(item => {
     items.reduce((sum, item) => sum + item.price * item.qty, 0)
   );
 
-  const canUseCart = items.length > 0 && Boolean($('customerType').value);
+   const hasItems = items.length > 0;
 
   // Keep the close button usable so the customer can close the cart.
   document.querySelectorAll('#cartPanel button:not(#closeCart)').forEach(button => {
-    button.disabled = !canUseCart;
+    button.disabled = !hasItems;
+  });
+
+  // Dim (not disable) the action buttons until a customer is chosen
+  document.querySelectorAll('#cartPanel .cart-actions button').forEach(button => {
+    button.classList.toggle('needs-customer', hasItems && !$('customerType').value);
   });
    
   $('cartItems').querySelectorAll('[data-minus]').forEach(button => {
@@ -1484,46 +1578,38 @@ function emptyCart() {
 
 function saveCurrentOrder() {
   const items = cartValues();
-
   if (!items.length) return;
+  if (!requireCustomer()) return;
 
-  const name = prompt('Masukkan nama / Nomor Pelanggan');
+  const no = getCartNo();
 
-  if (name === null) return;
+  // Same invoice number already saved -> update it instead of duplicating
+  const existing = savedOrders.findIndex(o => o.orderNo === no);
+  if (existing >= 0 && !confirm(`INV-${no} sudah tersimpan. Perbarui?`)) return;
 
-  const cleanName = name.trim();
+  const oldName = existing >= 0 ? (savedOrders[existing].name || '') : '';
+  const name = prompt('Nama / Nomor Pelanggan (opsional)', oldName);
+  if (name === null) return;          // Cancel still aborts; blank is allowed
 
-  if (!cleanName) {
-    showToast('Please enter an order name');
-    return;
-  }
-
- const savedAt = new Date();
-const orderId = 'SAVED-' + savedAt.getTime();
-
-const order = {
-  id: orderId,
-    orderNo: getCartNo(),
-  invoiceNumber: 'INV-' + getCartNo(),
-    name: cleanName,
+  const order = {
+    id: 'SAVED-' + Date.now(),
+    orderNo: no,
+    invoiceNumber: 'INV-' + no,
+    name: name.trim(),
     createdAt: new Date().toISOString(),
-        requesterName,
+    requesterName,
     customerType: $('customerType').value,
     orderLocation,
-
     items: JSON.parse(JSON.stringify(items)),
-    total: items.reduce(
-      (sum, item) => sum + item.price * item.qty, 0
-    )
+    total: items.reduce((sum, item) => sum + item.price * item.qty, 0)
   };
 
+  if (existing >= 0) savedOrders.splice(existing, 1);
   savedOrders.unshift(order);
 
   writeStorage(CONFIG.savedOrdersKey, savedOrders);
-
   renderSavedOrders();
-
-  showToast(`Order "${cleanName}" saved`);
+  showToast(`${order.invoiceNumber} saved`);
 }
 
 function renderSavedOrders() {
@@ -1546,7 +1632,8 @@ function renderSavedOrders() {
     <div class="saved-order-card" data-saved-id="${esc(order.id)}">
 
       <div class="saved-order-info">
-        <strong>${esc(order.name)}</strong>
+        <strong>${esc(savedTitle(order))}</strong>
+        ${order.name ? `<small>${esc(order.name)}</small>` : ''}
 
         <small>
           ${order.items.length} different products ·
@@ -1667,7 +1754,7 @@ async function copySavedInvoice(id) {
   y += 38;
   ctx.fillStyle = '#171717';
   ctx.font = 'bold 28px Arial';
-  ctx.fillText(String(order.name), padding, y);
+    ctx.fillText(String(order.name || order.customerType || '-'), padding, y);
 
   // Items header
   y += 65;
@@ -1777,7 +1864,7 @@ function loadSavedOrder(id) {
 
   if (cartValues().length) {
     if (!confirm(
-      'Replace your current cart with "' + order.name + '"?'
+      'Replace your current cart with ' + savedTitle(order) + '?'
     )) {
       return;
     }
@@ -1804,7 +1891,7 @@ function loadSavedOrder(id) {
   closeSavedOrders();
   openCart();
 
-  showToast(`Loaded "${order.name}"`);
+ showToast(`Loaded ${savedTitle(order)}`);
 }
 
 function deleteSavedOrder(id) {
@@ -1812,7 +1899,7 @@ function deleteSavedOrder(id) {
 
   if (!order) return;
 
-  if (!confirm(`Delete saved order "${order.name}"?`)) {
+  if (!confirm(`Delete saved order ${savedTitle(order)}?`)) {
     return;
   }
 
@@ -1892,13 +1979,11 @@ async function sendOrder() {
     return;
   }
 
+    if (!requireCustomer()) return;
+    if (!(await ensureFreshCartNo('telegram'))) return;
+
   const order = orderText();
   const customerType = $('customerType').value;
-
-  if (!customerType) {
-    showToast(t('selectCustomerFirst'));
-    return;
-  }
 
   order.customerType = customerType;
   order.orderLocation = orderLocation;
@@ -1958,7 +2043,8 @@ if (!response.ok || !result.ok) {
 
 
     showToast(t('sentTelegram'));
-
+        markNoUsed('telegram');
+     
   } catch (error) {
     showToast(`${t('orderFailed')}: ${error.message}. ${t('sendFailedCopy')}`);
   } finally {
@@ -2054,6 +2140,7 @@ function importOrderFromText() {
   showToast(`Imported ${Object.keys(importedCart).length} products`);
 }
 async function copyOrder() {
+     if (!requireCustomer()) return;
   try {
     await navigator.clipboard.writeText(orderText().text);
     showToast(t('orderCopied'));
@@ -2173,8 +2260,10 @@ window.addEventListener('popstate', () => {
     closeQuantitySelector();
   } else if (!$('settingsPanel').classList.contains('hidden')) {
     closeSettings();
-  } else if ($('importOrderPanel').classList.contains('open')) {
+   } else if ($('importOrderPanel').classList.contains('open')) {
     closeImportOrder();
+  } else if ($('inboxPanel') && $('inboxPanel').classList.contains('open')) {
+    closeInbox();
   } else if (!$('savedOrdersPanel').classList.contains('hidden')) {
     closeSavedOrders();
   }
@@ -2463,8 +2552,9 @@ initializeApp();
     const items = order.items || order.cart || [];
     let total = 0;
 
-    $('viewOrderTitle').textContent = order.name || 'Order';
-    $('viewOrderSubtitle').textContent = `${items.length} different products`;
+    $('viewOrderTitle').textContent = order.invoiceNumber || order.name || 'Order';
+    $('viewOrderSubtitle').textContent =
+      `${items.length} different products` + (order.name ? ` · ${order.name}` : '');
 
     $('viewOrderItems').innerHTML = items.map(it => {
       const qty = Number(it.qty ?? it.quantity ?? 1);
@@ -2992,10 +3082,7 @@ initializeApp();
     lines.push('', `Total : ${money(d.total)}`);
     return lines.join('\n');
   }
-function docName(data) {
-  return String(data.invoiceNumber || 'nota').replace(
-    /^INV-/, data.docType === 'Invoice' ? 'INV-' : 'NOT-');
-}
+
   function toFiles(canvases, data) {
     const prefix = String(data.invoiceNumber || 'nota').replace(
       /^INV-/, data.docType === 'Invoice' ? 'INV-' : 'NOT-');
@@ -3041,39 +3128,35 @@ function docName(data) {
    
   /* ---------- print ---------- */
     async function printPages(canvases, data) {
-  if (data && window.matchMedia('(pointer: coarse)').matches) {
-    if (await shareFiles(canvases, data)) return;
+    if (data && window.matchMedia('(pointer: coarse)').matches) {
+      if (await shareFiles(canvases, data)) return;
+    }
+    const old = document.getElementById('notaPrintArea');
+    if (old) old.remove();
+
+    const area = document.createElement('div');
+    area.id = 'notaPrintArea';
+
+    const imgs = canvases.map(canvas => {
+      const img = new Image();
+      img.src = canvas.toDataURL('image/png');
+      area.appendChild(img);
+      return img;
+    });
+
+    document.body.appendChild(area);
+
+    await Promise.all(imgs.map(img =>
+      img.decode ? img.decode().catch(() => {}) : Promise.resolve()
+    ));
+
+    window.addEventListener('afterprint', () => {
+      setTimeout(() => area.remove(), 1000);
+    }, { once: true });
+
+    window.print();
   }
-  const old = document.getElementById('notaPrintArea');
-  if (old) old.remove();
 
-  const area = document.createElement('div');
-  area.id = 'notaPrintArea';
-
-  const imgs = canvases.map(canvas => {
-    const img = new Image();
-    img.src = canvas.toDataURL('image/png');
-    area.appendChild(img);
-    return img;
-  });
-
-  document.body.appendChild(area);
-
-  await Promise.all(imgs.map(img =>
-    img.decode ? img.decode().catch(() => {}) : Promise.resolve()
-  ));
-
-  // The PDF / print file name comes from the page title
-  const originalTitle = document.title;
-  if (data) document.title = docName(data);
-
-  window.addEventListener('afterprint', () => {
-    document.title = originalTitle;
-    setTimeout(() => area.remove(), 1000);
-  }, { once: true });
-
-  window.print();
-}
   async function runNota(base) {
            const details = await askDetails(
       base.customerType || ($('customerType') ? $('customerType').value : ''),

@@ -74,8 +74,8 @@
     return COPY[currentLanguage === 'id' ? 'id' : 'en'];
   }
 
-  function ensureInboxSection() {
-    const host = $('savedOrdersList');
+    function ensureInboxSection() {
+    const host = $('inboxHost');
     if (!host) return null;
 
     let section = $('sharedInboxSection');
@@ -83,25 +83,38 @@
       section = document.createElement('section');
       section.id = 'sharedInboxSection';
       section.className = 'shared-inbox-section';
+      section.innerHTML = `
+        <div class="shared-inbox-heading">
+          <div>
+            <strong>${words().received}</strong>
+            <small id="sharedInboxStatus">${words().loading}</small>
+          </div>
+          <button id="refreshSharedInbox" type="button">
+            ${words().refresh}
+          </button>
+        </div>
+        <div id="sharedInboxOrders"></div>
+      `;
       host.appendChild(section);
     }
-
-    section.innerHTML = `
-      <div class="shared-inbox-heading">
-        <div>
-          <strong>${words().received}</strong>
-          <small id="sharedInboxStatus">${words().loading}</small>
-        </div>
-        <button id="refreshSharedInbox" type="button">
-          ${words().refresh}
-        </button>
-      </div>
-      <div id="sharedInboxOrders"></div>
-    `;
 
     return section;
   }
 
+  function openInbox() {
+    activatePanelBackGuard();
+    ensureInboxSection();
+    $('inboxOverlay').classList.remove('hidden');
+    $('inboxPanel').classList.add('open');
+    $('inboxPanel').setAttribute('aria-hidden', 'false');
+  }
+
+  function closeInbox() {
+    $('inboxOverlay').classList.add('hidden');
+    $('inboxPanel').classList.remove('open');
+    $('inboxPanel').setAttribute('aria-hidden', 'true');
+  }
+  window.closeInbox = closeInbox;
   function updateInboxBadge(count) {
     const badge = $('navInboxCount');
     if (!badge) return;
@@ -229,18 +242,22 @@
     }
   }
 
-  function updateLabels() {
-
-
+    function updateLabels() {
     const button = $('sendToSalesman');
     if (button) button.textContent = words().send;
 
     const inboxLabel = $('navInboxLabel');
     if (inboxLabel) inboxLabel.textContent = words().inbox;
 
+    const title = $('inboxTitle');
+    if (title) title.textContent = words().inbox;
 
-    const section = $('sharedInboxSection');
-    if (section) ensureInboxSection();
+    const old = $('sharedInboxSection');
+    if (old) {
+      old.remove();
+      ensureInboxSection();
+      renderInboxOrders(cachedInboxOrders);
+    }
   }
 
   function addControls() {
@@ -285,19 +302,17 @@
 
     $('sendToSalesman').addEventListener('click', openRecipientPopup);
 
-    $('navInbox').addEventListener('click', () => {
-      openSavedOrders();
-      setTimeout(() => {
-        $('sharedInboxSection')?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start'
-        });
-      }, 150);
+        $('navInbox').addEventListener('click', () => {
+      openInbox();
+      void loadInbox();
     });
+
+    $('closeInbox').onclick = closeInbox;
+    $('inboxOverlay').onclick = closeInbox;
 
     $('languageSelect')?.addEventListener('change', updateLabels);
 
-    $('savedOrdersList').addEventListener('click', async event => {
+        $('inboxHost').addEventListener('click', async event => {
       const target = event.target;
 
       if (target.closest('#refreshSharedInbox')) {
@@ -317,11 +332,6 @@
       }
     });
 
-    const originalRenderSavedOrders = renderSavedOrders;
-    renderSavedOrders = function (...args) {
-      originalRenderSavedOrders.apply(this, args);
-      void loadInbox();
-    };
 
         setInterval(() => {
       if (!document.hidden && navigator.onLine) void loadInbox();
@@ -346,11 +356,8 @@ function openRecipientPopup() {
     return;
   }
 
-  if (!$('customerType').value) {
-    showToast(t('selectCustomerFirst'));
-    return;
-  }
-
+   if (!requireCustomer()) return;
+   
   const cancelLabel = currentLanguage === 'id' ? 'Batal' : 'Cancel';
   let selectedRecipient = '';
 
@@ -447,7 +454,7 @@ async function sendSharedOrder(recipientName) {
     showToast(words().needPin);
     return;
   }
-
+    if (!(await ensureFreshCartNo('salesman'))) return;
   const button = $('sendToSalesman');
   button.disabled = true;
 
@@ -469,10 +476,11 @@ async function sendSharedOrder(recipientName) {
         }))
       }
     });
-
+     
+        markNoUsed('salesman');
     showToast(`${words().sent} ${recipientName}`);
 
-    if ($('savedOrdersPanel')?.classList.contains('open')) {
+    if ($('inboxPanel')?.classList.contains('open')) {
       await loadInbox();
     }
   } catch (error) {
@@ -525,7 +533,7 @@ async function sendSharedOrder(recipientName) {
     saveCart();
 
     closeQuantitySelector();
-    closeSavedOrders();
+    closeInbox();
     openCart();
     showToast(`${words().loadedFrom} ${order.sender_name}`);
   }
@@ -564,6 +572,8 @@ async function sendSharedOrder(recipientName) {
       (identityEl && identityEl.style.display === 'flex') ||
       $('notaPopupOverlay') ||
       $('salesmanRecipientOverlay') ||
+             $('invoiceNoOverlay') ||
+      $('inboxPanel')?.classList.contains('open') ||
       $('viewOrderPanel')?.classList.contains('open')
     );
   }
