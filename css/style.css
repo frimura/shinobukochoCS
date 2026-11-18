@@ -1994,3 +1994,15 @@ main {
   color: var(--muted);
   font-size: 12px;
 }
+/* Inbox panel (separate from saved orders) */
+#inboxOverlay { z-index: 30; }
+#inboxPanel   { z-index: 31; }
+
+#inboxHost .shared-inbox-section {
+  margin-top: 0;
+  padding-top: 6px;
+  border-top: 0;
+}
+
+/* Cart action buttons before a customer is chosen: dimmed but clickable */
+#cartPanel .cart-actions button.needs-customer { opacity: .55; }
