@@ -2962,19 +2962,14 @@ initializeApp();
         ctx.textAlign = 'left';
         ctx.fillStyle = '#171717';
         ctx.font = 'bold 22px Arial';
-        r.lines.forEach((ln, i) => ctx.fillText(ln, M + 12, y + 36 + i * 28));
-
-        ctx.font = '15px Arial';
-        ctx.fillStyle = '#777777';
-        ctx.fillText(`SKU: ${it.sku || '-'}`, M + 12,
-          y + 62 + (r.lines.length - 1) * 28);
+                r.lines.forEach((ln, i) => ctx.fillText(ln, M + 12, y + 34 + i * 28));
 
         ctx.fillStyle = '#333333';
         ctx.font = '21px Arial';
         ctx.textAlign = 'right';
-        ctx.fillText(String(qty), 650, y + 36);
-        ctx.fillText(money(price), 820, y + 36);
-        ctx.fillText(money(price * qty), W - M - 12, y + 36);
+                ctx.fillText(String(qty), 650, y + 34);
+        ctx.fillText(money(price), 820, y + 34);
+        ctx.fillText(money(price * qty), W - M - 12, y + 34);
 
         y += r.h;
       });
@@ -3056,7 +3051,7 @@ initializeApp();
 
     const rows = data.items.map(item => {
       const lines = wrapText(measure, item.name, 470, 2);
-      return { item, lines, h: 56 + lines.length * 28 };
+            return { item, lines, h: 30 + lines.length * 28 };
     });
 
     const HEAD1 = 340, HEADN = 130, TABLE_HEAD = 56, TOTALS = 290;
