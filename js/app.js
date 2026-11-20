@@ -430,7 +430,17 @@ function money(value) {
     maximumFractionDigits: 0
   }).format(Number(value) || 0);
 }
+function priceTrend(product) {
+  const regular = Number(product.regularPrice) || 0;
+  const current = Number(product.price) || 0;
+  if (!regular || !current || current === regular) return '';
+  return current < regular ? 'down' : 'up';
+}
 
+function priceArrow(product) {
+  const trend = priceTrend(product);
+  return trend === 'down' ? '▼ ' : trend === 'up' ? '▲ ' : '';
+}
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;',
@@ -501,7 +511,8 @@ function normalize(rows) {
     price: indexOf('regular price'),
     name: indexOf('name'),
     variation: indexOf('variation'),
-        category: indexOf('code categorizing'),
+   category: indexOf('code categorizing'),
+    newPrice: indexOf('new price'),
     description: indexOf('web description')
   };
 
@@ -515,7 +526,11 @@ function normalize(rows) {
       short: String(row[columns.short] || '').trim(),
       image: String(row[columns.image] || '').trim(),
       notes: String(row[columns.notes] || '').trim(),
-      price: Number(
+          price:
+        Number(String(row[columns.newPrice] || '').replace(/[^0-9.-]/g, '')) ||
+        Number(String(row[columns.price] || '').replace(/[^0-9.-]/g, '')) ||
+        0,
+      regularPrice: Number(
         String(row[columns.price] || '').replace(/[^0-9.-]/g, '')
       ) || 0,
       name: String(row[columns.name] || '').trim(),
@@ -813,7 +828,7 @@ function renderProducts() {
           ${esc(product.short || product.name || product.sku)}
         </div>
 
-        <div class="product-price">${money(product.price)}</div>
+        <div class="product-price price-${priceTrend(product) || 'same'}">${priceArrow(product)}${money(product.price)}</div>
 
 <div
   class="product-stock-estimate"
@@ -899,7 +914,10 @@ function openQuantitySelector(sku) {
     product.short || product.name || product.sku;
 
   $('quantityProductSku').textContent = `${t('sku')}: ${product.sku}`;
-  $('quantityProductPrice').textContent = money(product.price);
+   $('quantityProductPrice').className =
+    'product-price price-' + (priceTrend(product) || 'same');
+  $('quantityProductPrice').textContent =
+    priceArrow(product) + money(product.price);
      $('quantityDescription').textContent =
     descriptionToText(product.description) ||
     (currentLanguage === 'id'
@@ -3121,9 +3139,13 @@ initializeApp();
       : 'Gambar tidak bisa disalin');
 
     setTimeout(() => {
-      window.location.href =
-        `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(buildText(data))}`;
-    }, 700);
+  const whatsappTab = window.open('about:blank', '_blank');
+  if (whatsappTab) {
+    whatsappTab.opener = null;
+    whatsappTab.location.href =
+      `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(buildText(data))}`;
+  }
+}, 700);
   }
    
   /* ---------- print ---------- */
