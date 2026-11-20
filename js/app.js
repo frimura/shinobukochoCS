@@ -1436,6 +1436,9 @@ function updateCartBadge() {
 
   $('cartCount').textContent = count;
   $('navCartCount').textContent = count;
+     $('navCartCount').textContent = count;
+  const tabCount = $('cartTabCount');
+  if (tabCount) tabCount.textContent = count;
 }
 
 function renderCart() {
@@ -2172,7 +2175,13 @@ async function copyOrder() {
    ========================================================= */
 
 function openCart() {
-   activatePanelBackGuard();
+    // Desktop: the cart is a side column, just make sure it is expanded
+  if (window.matchMedia('(min-width: 1000px)').matches) {
+    if (window.expandCart) window.expandCart();
+    return;
+  }
+
+  activatePanelBackGuard();
   $('cartOverlay').classList.remove('hidden');
   $('cartPanel').classList.add('open');
   $('cartPanel').setAttribute('aria-hidden', 'false');
@@ -3265,4 +3274,38 @@ initializeApp();
       behavior: 'smooth'
     });
   }));
+})();
+
+(function initCartTab() {
+  const KEY = 'centi_catalog_cart_collapsed_v1';
+
+  const tab = document.createElement('button');
+  tab.type = 'button';
+  tab.id = 'cartTab';
+  tab.className = 'cart-tab';
+  tab.setAttribute('aria-label', 'Show or hide cart');
+  tab.innerHTML =
+    '<span class="cart-tab-icon">🛒</span>' +
+    '<b id="cartTabCount">0</b>' +
+    '<span id="cartTabArrow" class="cart-tab-arrow">›</span>';
+  document.body.appendChild(tab);
+
+  $('cartTabCount').textContent =
+    cartValues().reduce((sum, item) => sum + item.qty, 0);
+
+  function apply(collapsed) {
+    document.body.classList.toggle('cart-collapsed', collapsed);
+    $('cartTabArrow').textContent = collapsed ? '‹' : '›';
+    try { localStorage.setItem(KEY, collapsed ? '1' : '0'); } catch (e) {}
+  }
+
+  tab.addEventListener('click', () => {
+    apply(!document.body.classList.contains('cart-collapsed'));
+  });
+
+  window.expandCart = () => apply(false);
+
+  let saved = false;
+  try { saved = localStorage.getItem(KEY) === '1'; } catch (e) {}
+  apply(saved);
 })();
