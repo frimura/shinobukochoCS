@@ -102,7 +102,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 main {
   max-width: 900px;
   margin: auto;
-  padding: 18px 14px 30px;
+  padding: 18px 60px 30px 14px;
 }
 
 .search-area {
@@ -2007,3 +2007,92 @@ main {
 
 /* Cart action buttons before a customer is chosen: dimmed but clickable */
 #cartPanel .cart-actions button.needs-customer { opacity: .55; }
+/* =========================================================
+   DESKTOP: COLLAPSIBLE CART ON THE FAR RIGHT
+   ========================================================= */
+.cart-tab { display: none; }
+
+@media (min-width: 1000px) {
+  body {
+    padding-right: 440px;
+    transition: padding-right .22s ease;
+  }
+  body.cart-collapsed { padding-right: 0; }
+
+  #cartPanel {
+    top: 2px;
+    bottom: 0;
+    right: 0;
+    width: 440px;
+    transform: none !important;
+    transition: transform .22s ease;
+    border-left: 1px solid var(--line);
+    box-shadow: none;
+  }
+  body.cart-collapsed #cartPanel {
+    transform: translateX(100%) !important;
+  }
+
+  #cartOverlay,
+  #closeCart,
+  .cart-top,
+  #navCart { display: none !important; }
+
+  .bottom-nav {
+    right: 440px;
+    transition: right .22s ease;
+  }
+  body.cart-collapsed .bottom-nav { right: 0; }
+
+  /* tab attached to the cart's left edge */
+  .cart-tab {
+    position: fixed;
+    top: 50%;
+    right: 440px;
+    transform: translateY(-50%);
+    z-index: 12;
+    width: 46px;
+    height: 136px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+       border: 1px solid var(--line);
+    border-right: 0;
+    border-radius: 14px 0 0 14px;
+    background: #fff;
+    color: var(--ink);
+    box-shadow: -4px 0 14px rgba(20, 31, 52, .08);
+    transition: right .22s ease, background .15s;
+  }
+    .cart-tab-arrow { font-size: 22px; line-height: 1; color: var(--muted); }
+  body.cart-collapsed .cart-tab { right: 0; }
+
+  .cart-tab-icon { font-size: 20px; line-height: 1; }
+  .cart-tab-arrow { font-size: 22px; line-height: 1; color: #aab3c2; }
+
+  .cart-tab b {
+    min-width: 22px;
+    padding: 2px 6px;
+    border-radius: 20px;
+    background: var(--green);
+    font-size: 12px;
+    text-align: center;
+  }
+}
+/* =========================================================
+   RESPONSIVE PRODUCT GRID (adapts to window size and zoom)
+   ========================================================= */
+@media (min-width: 650px) {
+  main { max-width: 1600px; }
+
+  .topbar {
+    padding-left: max(16px, calc((100% - 1600px) / 2));
+    padding-right: max(16px, calc((100% - 1600px) / 2));
+  }
+
+  .product-list {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  }
+}
