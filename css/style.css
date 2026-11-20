@@ -102,7 +102,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 main {
   max-width: 900px;
   margin: auto;
-  padding: 18px 60px 30px 14px;
+  padding: 18px 14px 30px;
 }
 
 .search-area {
@@ -2017,7 +2017,9 @@ main {
     padding-right: 440px;
     transition: padding-right .22s ease;
   }
-  body.cart-collapsed { padding-right: 0; }
+     body.cart-collapsed { padding-right: 0; }
+
+  main { padding-right: 60px; }
 
   #cartPanel {
     top: 2px;
