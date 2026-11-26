@@ -138,6 +138,7 @@
 </button>
 
   <button id="savedOrdersTop" type="button">
+    <b id="savedOrdersBadge" hidden>0</b>
     <span>
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -182,8 +183,21 @@
   <div id="cartOverlay" class="overlay hidden"></div>
   <aside id="cartPanel" class="cart-panel" aria-label="Shopping cart" aria-hidden="true">
     <div class="panel-head"><div><strong>Your order</strong><small id="cartSubtitle">0 different products</small></div><button id="closeCart" class="icon-button" aria-label="Close cart">×</button></div>
+    <div id="cartInfo" class="cart-info" hidden></div>
     <div id="cartItems" class="cart-items"></div>
     <div class="cart-footer">
+    <div class="shipping-line">
+      <label for="shippingInput" id="shippingLabel">Ongkir</label>
+      <div class="shipping-field">
+        <span>Rp</span>
+        <input id="shippingInput" type="text" inputmode="numeric"
+               autocomplete="off" placeholder="0">
+      </div>
+      <button type="button" data-ship="10000">10k</button>
+      <button type="button" data-ship="15000">15k</button>
+      <button type="button" data-ship="20000">20k</button>
+    </div>
+    <div id="cartBreakdown" class="cart-breakdown" hidden></div>
     <div class="total-line">
   <span>Total</span>
   <strong id="cartTotal">Rp0</strong>
@@ -398,7 +412,23 @@
       <button id="closeSavedOrders" class="icon-button" type="button">×</button>
     </div>
 
+   <div class="saved-tabs" role="tablist">
+      <button id="tabLocal" class="saved-tab is-active" type="button"
+              role="tab" aria-selected="true">
+        <span id="tabLocalLabel">Local</span> <b id="tabLocalCount">0</b>
+      </button>
+      <button id="tabServer" class="saved-tab" type="button"
+              role="tab" aria-selected="false">
+        <span id="tabServerLabel">Server</span> <b id="tabServerCount" hidden>0</b>
+      </button>
+    </div>
+
     <div id="savedOrdersList" class="cart-items"></div>
+
+    <div id="serverOrdersPane" class="cart-items hidden">
+      <div id="serverToolbar" class="server-toolbar"></div>
+      <div id="serverOrdersList"></div>
+    </div>
   </aside>
   <!-- INBOX (separate from saved orders) -->
   <div id="inboxOverlay" class="overlay hidden"></div>
@@ -426,6 +456,8 @@
   </div>
 
   <div id="viewOrderItems" class="cart-items"></div>
+
+  <div id="viewOrderHistory" class="view-order-history" hidden></div>
 
   <div class="cart-footer view-order-footer">
     <div class="view-order-meta" id="viewOrderMeta"></div>
