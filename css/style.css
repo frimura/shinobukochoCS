@@ -2480,3 +2480,23 @@ main {
   display: block;
   font-size: 11px;
 }
+/* Cart buttons: salesman top-right (white), Telegram bottom-left (blue), copy hidden */
+#cartPanel #copyOrder { display: none !important; }
+
+#cartPanel #sendToSalesman {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  border-color: var(--line);
+  background: var(--white);
+  color: var(--ink);
+}
+#cartPanel #sendToSalesman:active { background: var(--bg); }
+
+#cartPanel #sendOrder {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  border-color: #1d8fc4;
+  background: #229ED9;
+  color: #fff;
+}
+#cartPanel #sendOrder:active { background: #1b86b8; }
