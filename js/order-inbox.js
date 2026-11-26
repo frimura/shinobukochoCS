@@ -314,7 +314,7 @@ function stamp(iso) {
     const tags = [];
 
     if (order.inv_at) {
-      const preferred = order.payment && !order.nota_at
+      const preferred = order.payment && !order.nota_at && !order.tg_at
         ? ` · ${order.payment}` : '';
       const tip = `Invoice: ${order.inv_by || ''} ${stamp(order.inv_at)}`;
       tags.push(
@@ -330,6 +330,15 @@ function stamp(iso) {
         tags.push(
           `<em class="doc-tag paid">PAID · ${esc(order.payment)}</em>`
         );
+      }
+    }
+
+    if (order.tg_at) {
+      const tip = `Telegram: ${order.tg_by || ''} ${stamp(order.tg_at)}`;
+      tags.push(`<em class="doc-tag tg" title="${esc(tip)}">TG</em>`);
+
+      if (order.payment && !order.nota_at) {
+        tags.push(`<em class="doc-tag paid">PAID · ${esc(order.payment)}</em>`);
       }
     }
 
@@ -1107,17 +1116,22 @@ const EVENT_LABELS = {
         action: 'telegram',
         order: currentOrderPayload()
       });
-      return { rev: Number(result.rev) || 0, duplicate: !!result.duplicate };
+      return {
+        rev: Number(result.rev) || 0,
+        duplicate: !!result.duplicate,
+        payment: result.payment || ''
+      };
     } catch (error) {
       console.warn('Telegram revision check failed:', error);
       return { rev: null };
     }
   };
 
-  window.telegramSent = function () {
+  window.telegramSent = function (payment) {
     if (notReadyMessage()) return;
     callApi({
       action: 'telegram_sent',
+      payment: payment || '',
       orderNo: `CAT-${getCartNo()}`
     }).catch(error => console.warn('Telegram log failed:', error));
   };

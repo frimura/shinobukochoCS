@@ -1465,23 +1465,73 @@ async function ensureFreshCartNo(channel) {
 /* ---------- Telegram revisions (counted on the server) ---------- */
 // Returns the revision number (0 = none), or null if cancelled.
 let telegramCopyOnly = false;
+let telegramPayment = '';
+
+function askPaymentMethod() {
+  return new Promise(resolve => {
+    const id = currentLanguage === 'id';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'telegramPaymentOverlay';
+    overlay.className = 'salesman-recipient-overlay';
+    overlay.innerHTML = `
+      <section class="salesman-recipient-dialog" role="dialog" aria-modal="true">
+        <h2>${id ? 'Metode pembayaran' : 'Payment method'}</h2>
+        <p class="order-prompt-text">
+          ${id ? 'Pesanan dikirim ke Telegram sebagai pesanan selesai. Pilih metode pembayaran.'
+               : 'The order goes to Telegram as finished. Choose the payment method.'}
+        </p>
+        <div class="salesman-recipient-options">
+          ${['QRIS', 'Cash', 'Transfer'].map(method => `
+            <button type="button" class="salesman-recipient-option" data-pay="${method}">${method}</button>
+          `).join('')}
+        </div>
+        <div class="salesman-recipient-actions" style="grid-template-columns:1fr">
+          <button type="button" data-pay="">${id ? 'Batal' : 'Cancel'}</button>
+        </div>
+      </section>`;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('[data-pay]').forEach(button => {
+      button.addEventListener('click', () => {
+        overlay.remove();
+        resolve(button.dataset.pay || '');
+      });
+    });
+  });
+}
 
 // Returns the revision number (0 = none), or null if cancelled.
-// Sets telegramCopyOnly when nothing changed since the last Telegram send.
+// Sets telegramCopyOnly (nothing changed since the last send) and
+// telegramPayment (from the server, or asked now).
 async function resolveTelegramRev() {
   telegramCopyOnly = false;
+  telegramPayment = '';
   if (!window.telegramPrepare) return 0;
 
   const info = await window.telegramPrepare();
 
   if (info.rev === null) {
-    return confirm(currentLanguage === 'id'
+    if (!confirm(currentLanguage === 'id'
       ? 'Revisi tidak bisa dicek di server. Kirim tanpa nomor revisi?'
       : 'Could not check the revision on the server. Send without a revision number?'
-    ) ? 0 : null;
+    )) return null;
+
+    info.rev = 0;
   }
 
   telegramCopyOnly = !!info.duplicate;
+  telegramPayment = info.payment || '';
+
+  // Sending to Telegram means the order is paid. Ask for the method
+  // unless the server already has one (printed invoice or nota).
+  if (!telegramCopyOnly && !telegramPayment) {
+    const method = await askPaymentMethod();
+    if (!method) return null;
+    telegramPayment = method;
+  }
+
   return info.rev;
 }
 function requireCustomer() {
@@ -2160,7 +2210,7 @@ function closeSavedOrders() {
    13. ORDER GENERATION AND TELEGRAM
    ========================================================= */
 
-function orderText(rev = 0) {
+function orderText(rev = 0, payment = '') {
   const items = cartValues();
 
    const id = 'CAT-' + getCartNo();
@@ -2199,9 +2249,14 @@ function orderText(rev = 0) {
 
   return {
     id,
-        text: rev > 0
-      ? lines.join('\n').replace('No : Mobile Catalog', `No : Mobile Catalog\nRev : ${rev}`)
-      : lines.join('\n'),
+            text: lines.join('\n').replace(
+      'No : Mobile Catalog',
+      [
+        'No : Mobile Catalog',
+        rev > 0 ? `Rev : ${rev}` : '',
+        payment ? `Pembayaran : ${payment} (LUNAS)` : ''
+      ].filter(Boolean).join('\n')
+    ),
     items,
     total,
     requesterName
@@ -2217,11 +2272,11 @@ async function sendOrder() {
 
     if (!requireCustomer()) return;
       const rev = await resolveTelegramRev();
-  if (rev === null) return;
+if (rev === null) return;
 
   if (telegramCopyOnly) {
     try {
-      await navigator.clipboard.writeText(orderText(rev).text);
+      await navigator.clipboard.writeText(orderText(rev, telegramPayment).text);
       showToast(currentLanguage === 'id'
         ? 'Sudah terkirim ke Telegram, tidak ada perubahan. Teks pesanan disalin.'
         : 'Already sent to Telegram and nothing changed. Order text copied.');
@@ -2231,7 +2286,7 @@ async function sendOrder() {
     return;
   }
 
-  const order = orderText(rev);
+  const order = orderText(rev, telegramPayment);
   if (rev > 0) order.id += `-R${rev}`;
   const customerType = $('customerType').value;
 
@@ -2294,7 +2349,7 @@ if (!response.ok || !result.ok) {
 
     showToast(t('sentTelegram'));
         markNoUsed('telegram', { tgRev: rev });
-    if (window.telegramSent) window.telegramSent();
+   if (window.telegramSent) window.telegramSent(telegramPayment);
      
   } catch (error) {
     showToast(`${t('orderFailed')}: ${error.message}. ${t('sendFailedCopy')}`);
