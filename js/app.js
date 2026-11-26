@@ -1,6 +1,58 @@
 
 'use strict';
+/* ---------- Per-tab identity + per-salesman cart ---------- */
+(() => {
+  const IDENTITY = 'centi_catalog_requester_v1';
+  const PER_USER = new Set([
+    'centi_catalog_cart_v1',
+    'centi_catalog_cart_no_v1',
+    'centi_catalog_shipping_v1',
+    'centi_catalog_cart_source_v1',
+    'centi_inbox_seen_v1'
+  ]);
 
+  const nativeGet = Storage.prototype.getItem;
+  const nativeSet = Storage.prototype.setItem;
+  const nativeRemove = Storage.prototype.removeItem;
+
+  try {
+    // A new tab starts as the last person who chose a name on this device.
+    if (nativeGet.call(sessionStorage, IDENTITY) === null) {
+      const last = nativeGet.call(localStorage, IDENTITY);
+      if (last !== null) nativeSet.call(sessionStorage, IDENTITY, last);
+    }
+  } catch (e) { /* storage blocked: fall back to normal behaviour */ }
+
+  function tabName() {
+    try {
+      const raw = nativeGet.call(sessionStorage, IDENTITY);
+      return raw ? JSON.parse(raw) : '';
+    } catch (e) { return ''; }
+  }
+
+  const scoped = (store, key) =>
+    store === localStorage && PER_USER.has(key) ? `${key}|${tabName() || '-'}` : key;
+
+  Storage.prototype.getItem = function (key) {
+    if (this === localStorage && key === IDENTITY) {
+      const own = nativeGet.call(sessionStorage, key);
+      return own !== null ? own : nativeGet.call(localStorage, key);
+    }
+    return nativeGet.call(this, scoped(this, key));
+  };
+
+  Storage.prototype.setItem = function (key, value) {
+    if (this === localStorage && key === IDENTITY) {
+      nativeSet.call(sessionStorage, key, value);      // this tab
+      return nativeSet.call(localStorage, key, value); // default for new tabs
+    }
+    return nativeSet.call(this, scoped(this, key), value);
+  };
+
+  Storage.prototype.removeItem = function (key) {
+    return nativeRemove.call(this, scoped(this, key));
+  };
+})();
 /* =========================================================
    1. CONFIGURATION
    ========================================================= */
@@ -387,6 +439,7 @@ function showRequesterPrompt() {
       button.addEventListener('click', () => {
         requesterName = button.dataset.requester;
         writeStorage(CONFIG.identityKey, requesterName);
+        location.reload();
         overlay.style.display = 'none';
         updateRequesterBadge();
       });
