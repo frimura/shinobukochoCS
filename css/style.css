@@ -2500,3 +2500,20 @@ main {
   color: #fff;
 }
 #cartPanel #sendOrder:active { background: #1b86b8; }
+.doc-tag.tg { background: #e6f4fb; color: #16729c; }
+
+/* Empty cart works without a customer type, so don't dim it */
+#cartPanel .cart-actions button#emptyCart.needs-customer { opacity: 1; }
+
+/* Order location: both options clearly clickable */
+#cartPanel .order-location-option {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--white);
+}
+#cartPanel .order-location-option.is-active {
+  border-color: var(--green);
+  background: #e8f5ef;
+  color: var(--green-dark);
+  font-weight: 800;
+}
