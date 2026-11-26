@@ -1464,13 +1464,15 @@ async function ensureFreshCartNo(channel) {
 }
 /* ---------- Telegram revisions (counted on the server) ---------- */
 // Returns the revision number (0 = none), or null if cancelled.
-let telegramResend = false;
+let telegramCopyOnly = false;
 
+// Returns the revision number (0 = none), or null if cancelled.
+// Sets telegramCopyOnly when nothing changed since the last Telegram send.
 async function resolveTelegramRev() {
-  telegramResend = false;
+  telegramCopyOnly = false;
   if (!window.telegramPrepare) return 0;
 
-  let info = await window.telegramPrepare();
+  const info = await window.telegramPrepare();
 
   if (info.rev === null) {
     return confirm(currentLanguage === 'id'
@@ -1479,17 +1481,7 @@ async function resolveTelegramRev() {
     ) ? 0 : null;
   }
 
-  if (info.duplicate) {
-    const choice = await askResendOrNew(getCartNo());
-    if (choice === 'new') {
-      setCartNo(newOrderNo());
-      info = await window.telegramPrepare();
-      return info.rev === null ? 0 : info.rev;
-    }
-    if (choice !== 'resend') return null;
-    telegramResend = true;
-  }
-
+  telegramCopyOnly = !!info.duplicate;
   return info.rev;
 }
 function requireCustomer() {
@@ -2227,9 +2219,20 @@ async function sendOrder() {
       const rev = await resolveTelegramRev();
   if (rev === null) return;
 
+  if (telegramCopyOnly) {
+    try {
+      await navigator.clipboard.writeText(orderText(rev).text);
+      showToast(currentLanguage === 'id'
+        ? 'Sudah terkirim ke Telegram, tidak ada perubahan. Teks pesanan disalin.'
+        : 'Already sent to Telegram and nothing changed. Order text copied.');
+    } catch {
+      showToast(t('copyUnavailable'));
+    }
+    return;
+  }
+
   const order = orderText(rev);
   if (rev > 0) order.id += `-R${rev}`;
-  if (telegramResend) order.id += `-S${Date.now().toString(36)}`;
   const customerType = $('customerType').value;
 
   order.customerType = customerType;
