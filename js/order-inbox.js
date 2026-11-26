@@ -9,7 +9,7 @@
 (() => {
   // DEV: points at the test function. When you promote to production,
   // change this back to 'smooth-handler' (or keep the new name).
-  const ENDPOINT = `${SUPABASE_URL}/functions/v1/smooth-handler`;
+  const ENDPOINT = `${SUPABASE_URL}/functions/v1/smooth-handler-dev`;
 
   // UI hint only. The server decides who may delete or change an order.
   const ADMIN_NAMES = ['Frisky', 'Amin'];
@@ -338,11 +338,13 @@ function stamp(iso) {
 const EVENT_LABELS = {
     en: {
       created: 'created it', edited: 'edited it', sent: 'sent it to',
+      telegram: 'sent it to Telegram',
       invoice: 'sent the invoice', nota: 'sent the nota',
       done: 'marked it done', reopened: 'reopened it'
     },
     id: {
       created: 'membuat', edited: 'mengedit', sent: 'mengirim ke',
+      telegram: 'mengirim ke Telegram',
       invoice: 'mengirim invoice', nota: 'mengirim nota',
       done: 'menandai selesai', reopened: 'membuka lagi'
     }
@@ -353,6 +355,7 @@ const EVENT_LABELS = {
     let text = labels[event.event] || event.event;
 
     if (event.event === 'sent' && event.target) text += ` ${event.target}`;
+    if (event.detail && event.detail.rev > 0) text += ` · Rev ${event.detail.rev}`;
     if (event.detail && event.detail.payment) {
       text += ` (${event.detail.payment})`;
     }
@@ -440,6 +443,7 @@ const EVENT_LABELS = {
           <div class="saved-order-info">
             <div class="server-card-title">
               <strong>${esc(order.order_no)}</strong>
+              ${Number(order.rev) > 0 ? `<em class="doc-tag inv">Rev ${Number(order.rev)}</em>` : ''}
               <span class="order-status-badge ${isDone ? 'done' : 'open'}">
                 ${esc(isDone ? w.done : w.open)}
               </span>
@@ -1073,6 +1077,49 @@ const EVENT_LABELS = {
     } catch (error) {
       showToast(`${words().failed}: ${error.message}`);
     }
+  };
+
+   /* ---------- Telegram revisions (server side) ---------- */
+
+  function currentOrderPayload() {
+    return {
+      orderNo: `CAT-${getCartNo()}`,
+      customerType: $('customerType').value,
+      orderLocation,
+      customerName: '',
+      shipping: cartShipping(),
+      items: cartValues().map(item => ({
+        sku: item.sku,
+        name: item.name,
+        price: Number(item.price) || 0,
+        qty: Number(item.qty) || 0,
+        image: item.image || ''
+      }))
+    };
+  }
+
+  // { rev, duplicate } or { rev: null } when the server can't be used
+  window.telegramPrepare = async function () {
+    if (notReadyMessage()) return { rev: null };
+
+    try {
+      const result = await callApi({
+        action: 'telegram',
+        order: currentOrderPayload()
+      });
+      return { rev: Number(result.rev) || 0, duplicate: !!result.duplicate };
+    } catch (error) {
+      console.warn('Telegram revision check failed:', error);
+      return { rev: null };
+    }
+  };
+
+  window.telegramSent = function () {
+    if (notReadyMessage()) return;
+    callApi({
+      action: 'telegram_sent',
+      orderNo: `CAT-${getCartNo()}`
+    }).catch(error => console.warn('Telegram log failed:', error));
   };
   /* ---------- inbox polling: badge + incoming-order popup ---------- */
 

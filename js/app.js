@@ -102,7 +102,7 @@ const LANG = {
     selectCustomer: 'Select customer',
    
     
-    sendTelegram: 'Send to Telegram',
+    sendTelegram: 'Send to Telegram + Copy',
     copyOrder: 'Copy order text',
     emptyCart: 'Empty cart',
     remove: 'Remove',
@@ -191,7 +191,7 @@ const LANG = {
     selectCustomer: 'Pilih pelanggan',
     sendToPC: 'Kirim ke PC',
     selectPCFirst: 'Pilih PC terlebih dahulu',
-    sendTelegram: 'Kirim ke Telegram',
+    sendTelegram: 'Kirim ke Telegram + Salin',
     copyOrder: 'Salin teks pesanan',
     emptyCart: 'Kosongkan keranjang',
     remove: 'Hapus',
@@ -1393,9 +1393,9 @@ let usedNos = readStorage(USED_NOS_KEY, {});
 if (!usedNos || typeof usedNos !== 'object' || Array.isArray(usedNos)) usedNos = {};
 
 // channel: 'telegram' or 'salesman'
-function markNoUsed(channel) {
+function markNoUsed(channel, extra = {}) {
   const no = getCartNo();
-  usedNos[no] = { ...(typeof usedNos[no] === 'object' ? usedNos[no] : {}), [channel]: true };
+  usedNos[no] = { ...(typeof usedNos[no] === 'object' ? usedNos[no] : {}), [channel]: true, ...extra };
 
   const keys = Object.keys(usedNos);
   if (keys.length > 500) {
@@ -1461,6 +1461,36 @@ async function ensureFreshCartNo(channel) {
     return true;
   }
   return choice === 'resend';
+}
+/* ---------- Telegram revisions (counted on the server) ---------- */
+// Returns the revision number (0 = none), or null if cancelled.
+let telegramResend = false;
+
+async function resolveTelegramRev() {
+  telegramResend = false;
+  if (!window.telegramPrepare) return 0;
+
+  let info = await window.telegramPrepare();
+
+  if (info.rev === null) {
+    return confirm(currentLanguage === 'id'
+      ? 'Revisi tidak bisa dicek di server. Kirim tanpa nomor revisi?'
+      : 'Could not check the revision on the server. Send without a revision number?'
+    ) ? 0 : null;
+  }
+
+  if (info.duplicate) {
+    const choice = await askResendOrNew(getCartNo());
+    if (choice === 'new') {
+      setCartNo(newOrderNo());
+      info = await window.telegramPrepare();
+      return info.rev === null ? 0 : info.rev;
+    }
+    if (choice !== 'resend') return null;
+    telegramResend = true;
+  }
+
+  return info.rev;
 }
 function requireCustomer() {
   const select = $('customerType');
@@ -1587,7 +1617,7 @@ function renderCartInfo() {
   if (savedOrders.some(order => order.orderNo === no)) {
     chips.push(id ? 'Tersimpan lokal' : 'Saved locally');
   }
-  if (used.telegram) chips.push(id ? 'Terkirim ke Telegram' : 'Sent to Telegram');
+    if (used.telegram) chips.push((id ? 'Terkirim ke Telegram' : 'Sent to Telegram') + (used.tgRev > 0 ? ` · Rev ${used.tgRev}` : ''));
   if (used.salesman) chips.push(id ? 'Terkirim ke sales' : 'Sent to salesman');
 
   box.hidden = false;
@@ -2138,7 +2168,7 @@ function closeSavedOrders() {
    13. ORDER GENERATION AND TELEGRAM
    ========================================================= */
 
-function orderText() {
+function orderText(rev = 0) {
   const items = cartValues();
 
    const id = 'CAT-' + getCartNo();
@@ -2177,7 +2207,9 @@ function orderText() {
 
   return {
     id,
-    text: lines.join('\n'),
+        text: rev > 0
+      ? lines.join('\n').replace('No : Mobile Catalog', `No : Mobile Catalog\nRev : ${rev}`)
+      : lines.join('\n'),
     items,
     total,
     requesterName
@@ -2192,9 +2224,12 @@ async function sendOrder() {
   }
 
     if (!requireCustomer()) return;
-    if (!(await ensureFreshCartNo('telegram'))) return;
+      const rev = await resolveTelegramRev();
+  if (rev === null) return;
 
-  const order = orderText();
+  const order = orderText(rev);
+  if (rev > 0) order.id += `-R${rev}`;
+  if (telegramResend) order.id += `-S${Date.now().toString(36)}`;
   const customerType = $('customerType').value;
 
   order.customerType = customerType;
@@ -2205,7 +2240,7 @@ async function sendOrder() {
 });
    
   if (!confirm(
-    t('confirmTelegram') + '\n\n' +
+    t('confirmTelegram') + (rev > 0 ? ` (REV ${rev})` : '') + '\n\n' +
     t('destination') + ': TELEGRAM\n\n' +
     t('confirmSend')
   )) {
@@ -2255,7 +2290,8 @@ if (!response.ok || !result.ok) {
 
 
     showToast(t('sentTelegram'));
-        markNoUsed('telegram');
+        markNoUsed('telegram', { tgRev: rev });
+    if (window.telegramSent) window.telegramSent();
      
   } catch (error) {
     showToast(`${t('orderFailed')}: ${error.message}. ${t('sendFailedCopy')}`);
