@@ -2517,3 +2517,46 @@ main {
   color: var(--green-dark);
   font-weight: 800;
 }
+/* Bottom nav: same icon box, size and label spacing for all four buttons */
+.bottom-nav button {
+  gap: 4px;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bottom-nav button > span:first-of-type {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;            /* hides any leftover text glyph */
+}
+
+.bottom-nav button svg {
+  width: 22px !important;
+  height: 22px !important;
+  stroke-width: 2;
+  display: block;
+}
+
+.bottom-nav button .nav-label {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* Badges sit on the top-right corner of the icon */
+#navCartCount,
+#savedOrdersBadge {
+  top: 4px;
+  left: calc(50% + 6px);
+  transform: none;
+}
+
+@media (max-width: 380px) {
+  .bottom-nav button { font-size: 10px; }
+  .bottom-nav button .nav-label { font-size: 10px; }
+}
