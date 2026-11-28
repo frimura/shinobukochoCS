@@ -9,7 +9,7 @@
 (() => {
   // DEV: points at the test function. When you promote to production,
   // change this back to 'smooth-handler' (or keep the new name).
-  const ENDPOINT = `${SUPABASE_URL}/functions/v1/smooth-handler-dev`;
+  const ENDPOINT = `${SUPABASE_URL}/functions/v1/smooth-handler`;
 
   // UI hint only. The server decides who may delete or change an order.
   const ADMIN_NAMES = ['Frisky', 'Amin'];
