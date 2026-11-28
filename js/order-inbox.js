@@ -9,7 +9,7 @@
 (() => {
   // DEV: points at the test function. When you promote to production,
   // change this back to 'smooth-handler' (or keep the new name).
-  const ENDPOINT = `${SUPABASE_URL}/functions/v1/smooth-handler`;
+  const ENDPOINT = `${SUPABASE_URL}/functions/v1/smooth-handler-dev`;
 
   // UI hint only. The server decides who may delete or change an order.
   const ADMIN_NAMES = ['Frisky', 'Amin'];
@@ -31,6 +31,8 @@
       chooseName: 'Select your name first.',
       needPin: 'Set the shared inbox PIN in Connection settings.',
       load: 'Load to cart',
+      copyText: 'Copy order text',
+      copied: 'Order text copied',
       markDone: 'Mark done',
       reopen: 'Reopen',
       remove: 'Delete',
@@ -82,6 +84,8 @@
       chooseName: 'Pilih nama Anda terlebih dahulu.',
       needPin: 'Atur PIN kotak masuk bersama di Pengaturan koneksi.',
       load: 'Muat ke keranjang',
+           copyText: 'Salin teks pesanan',
+      copied: 'Teks pesanan disalin',
       markDone: 'Tandai selesai',
       reopen: 'Buka lagi',
       remove: 'Hapus',
@@ -267,10 +271,6 @@
         `).join('')}
       </select>
       <button id="serverRefresh" type="button">${esc(w.refresh)}</button>
-      <label class="hide-done">
-        <input id="serverHideDone" type="checkbox"${hideDone ? ' checked' : ''}>
-        ${esc(w.hideDone)}
-      </label>
       <div id="serverStatus" class="server-status"></div>
     `;
   }
@@ -285,6 +285,7 @@
   function visibleServerOrders() {
     return serverOrders.filter(order => {
       if (hideDone && order.status === 'completed') return false;
+       if (!matchesDate(order.created_at)) return false;
 
       if (
         personFilter &&
@@ -341,19 +342,24 @@ function stamp(iso) {
         tags.push(`<em class="doc-tag paid">PAID · ${esc(order.payment)}</em>`);
       }
     }
-
+    if (order.jb_at) {
+      const tip = `Jubelio: ${stamp(order.jb_at)}`;
+      tags.push(`<em class="doc-tag jb" title="${esc(tip)}">JUBELIO ✓</em>`);
+    }
     return tags.length ? `<div class="doc-tags">${tags.join('')}</div>` : '';
   }
 const EVENT_LABELS = {
     en: {
       created: 'created it', edited: 'edited it', sent: 'sent it to',
       telegram: 'sent it to Telegram',
+     jubelio: 'entered it in Jubelio',
       invoice: 'sent the invoice', nota: 'sent the nota',
       done: 'marked it done', reopened: 'reopened it'
     },
     id: {
       created: 'membuat', edited: 'mengedit', sent: 'mengirim ke',
       telegram: 'mengirim ke Telegram',
+     jubelio: 'memasukkan ke Jubelio',
       invoice: 'mengirim invoice', nota: 'mengirim nota',
       done: 'menandai selesai', reopened: 'membuka lagi'
     }
@@ -405,7 +411,8 @@ const EVENT_LABELS = {
         : '',
       order.inv_by ? `Invoice: ${order.inv_by} ${stamp(order.inv_at)}` : '',
       order.nota_by ? `Nota: ${order.nota_by} ${stamp(order.nota_at)}` : '',
-      order.payment ? `${words().payment}: ${order.payment}` : ''
+      order.payment ? `${words().payment}: ${order.payment}` : '',
+           order.jb_at ? `Jubelio: ${stamp(order.jb_at)}` : ''
     ].filter(Boolean);
   }
  const EYE_ICON =
@@ -448,14 +455,12 @@ const EVENT_LABELS = {
       const id = esc(order.id);
 
       return `
-        <div class="saved-order-card server-card${isDone ? ' is-done' : ''}">
+        <div class="saved-order-card server-card">
           <div class="saved-order-info">
             <div class="server-card-title">
               <strong>${esc(order.order_no)}</strong>
+              ${typeBadge(order.customer_type)}
               ${Number(order.rev) > 0 ? `<em class="doc-tag inv">Rev ${Number(order.rev)}</em>` : ''}
-              <span class="order-status-badge ${isDone ? 'done' : 'open'}">
-                ${esc(isDone ? w.done : w.open)}
-              </span>
             </div>
             ${order.customer_name
               ? `<small>${esc(order.customer_name)}</small>` : ''}
@@ -471,10 +476,9 @@ const EVENT_LABELS = {
           <div class="server-card-actions">
             <button type="button" class="primary-button"
                     data-server-load="${id}">${esc(w.load)}</button>
-            ${canChangeStatus(order) ? `
-              <button type="button" data-server-toggle="${id}">
-                ${esc(isDone ? w.reopen : w.markDone)}
-              </button>` : ''}
+                       <button type="button" data-server-copy="${id}">
+              ${esc(w.copyText)}
+            </button>
             ${canManage(order) ? `
               <button type="button" class="danger"
                       data-server-delete="${id}">${esc(w.remove)}</button>` : ''}
@@ -526,7 +530,10 @@ const EVENT_LABELS = {
     setServerStatus(words().loading);
 
     try {
-      const result = await callApi({ action: 'list', limit: serverLimit });
+            const result = await callApi({
+        action: 'list',
+        limit: DATE_FILTER.value ? Math.max(serverLimit, 300) : serverLimit
+      });
 
       serverOrders = result.orders || [];
       serverHasMore = !!result.hasMore;
@@ -575,7 +582,62 @@ const EVENT_LABELS = {
       showToast(`${words().failed}: ${error.message}`);
     }
   }
+  // Same layout as the Telegram text
+  function serverOrderText(order) {
+    const items = order.items || [];
+    const subtotal = items.reduce(
+      (sum, item) => sum + (Number(item.price) || 0) * (Number(item.qty) || 0), 0
+    );
+    const shipping = Number(order.shipping) || 0;
+    const rev = Number(order.rev) || 0;
 
+    const lines = [
+      `New Order: ${order.order_no}`,
+      '---------------------------------',
+      `Pelanggan: ${order.customer_type || 'Unknown'}`,
+      `Requested by: ${order.sender_name || 'Unknown'}`,
+      `Lokasi: ${order.order_location || 'Pusat'}`,
+      'No : Mobile Catalog'
+    ];
+    if (rev > 0) lines.push(`Rev : ${rev}`);
+    if (order.payment && (order.nota_at || order.tg_at)) {
+      lines.push(`Pembayaran : ${order.payment} (LUNAS)`);
+    }
+    lines.push('', 'Pesanan :');
+
+    for (const item of items) {
+      lines.push(
+        '',
+        `${item.qty}x ${item.name}`,
+        `  SKU: ${item.sku}`,
+        `  Price: ${money(Number(item.price) || 0)}`
+      );
+    }
+
+    lines.push('');
+    if (shipping > 0) lines.push(`Ongkir : ${money(shipping)}`);
+    lines.push(`Total : ${money(subtotal + shipping)}`);
+    return lines.join('\n');
+  }
+
+  async function copyServerOrder(id) {
+    const order = serverOrders.find(item => item.id === id);
+    if (!order) return;
+
+    const text = serverOrderText(order);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      const box = document.createElement('textarea');
+      box.value = text;
+      box.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(box);
+      box.select();
+      document.execCommand('copy');
+      box.remove();
+    }
+    showToast(words().copied);
+  }
   function loadServerOrder(id) {
     const order =
       serverOrders.find(item => item.id === id) ||
@@ -788,7 +850,11 @@ const EVENT_LABELS = {
         loadServerOrder(loadButton.dataset.serverLoad);
         return;
       }
-
+           const copyButton = target.closest('[data-server-copy]');
+      if (copyButton) {
+        void copyServerOrder(copyButton.dataset.serverCopy);
+        return;
+      }
       const toggleButton = target.closest('[data-server-toggle]');
       if (toggleButton) {
         void toggleServerOrder(toggleButton.dataset.serverToggle);
@@ -1031,7 +1097,10 @@ const EVENT_LABELS = {
   }
 
   window.saveOrderToServer = saveOrderToServer;
-
+  window.onDateFilterChange = () => {
+    renderServerOrders();
+    void loadServerOrders();
+  };
    window.saveOrderToServer = saveOrderToServer;
 
   // Called after "Save order" (local). If the same number is on the server,
@@ -1127,12 +1196,14 @@ const EVENT_LABELS = {
     }
   };
 
-  window.telegramSent = function (payment) {
+    window.telegramSent = function (payment, order) {
     if (notReadyMessage()) return;
     callApi({
       action: 'telegram_sent',
       payment: payment || '',
-      orderNo: `CAT-${getCartNo()}`
+      orderNo: `CAT-${getCartNo()}`,
+      jobId: (order && order.id) || '',
+      jobText: (order && order.text) || ''
     }).catch(error => console.warn('Telegram log failed:', error));
   };
   /* ---------- inbox polling: badge + incoming-order popup ---------- */

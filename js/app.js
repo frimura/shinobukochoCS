@@ -1886,30 +1886,79 @@ function saveCurrentOrder() {
     showToast(`${order.invoiceNumber} saved`);
   if (window.syncSavedToServer) window.syncSavedToServer(order);
 }
+/* ---------- customer badge + date filter (Saved Orders) ---------- */
+function typeBadge(type) {
+  const s = String(type || '').toLowerCase();
+  let cls = '', label = '';
+  if (s.includes('3d')) { cls = 'p3d'; label = '3D'; }
+  else if (s.includes('offline')) { cls = 'offline'; label = 'Offline'; }
+  else if (s.includes('wa')) { cls = 'wa'; label = 'WA'; }
+  return label ? `<em class="type-badge ${cls}">${label}</em>` : '';
+}
 
+var DATE_FILTER = { value: '' };   // '' = all dates, else YYYY-MM-DD
+
+function dateKey(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function matchesDate(value) {
+  return !(DATE_FILTER && DATE_FILTER.value) || dateKey(value) === DATE_FILTER.value;
+}
+
+function paintDateBar() {
+  const input = $('dateFilter');
+  if (!input) return;
+  input.value = DATE_FILTER.value;
+  $('dateToday')?.classList.toggle('is-active', DATE_FILTER.value === dateKey(new Date()));
+  $('dateAll')?.classList.toggle('is-active', DATE_FILTER.value === '');
+}
+
+function setDateFilter(value) {
+  DATE_FILTER.value = value || '';
+  paintDateBar();
+  renderSavedOrders();
+  if (typeof window.onDateFilterChange === 'function') window.onDateFilterChange();
+}
+
+DATE_FILTER.value = dateKey(new Date());      // default view = today
+$('dateToday')?.addEventListener('click', () => setDateFilter(dateKey(new Date())));
+$('dateAll')?.addEventListener('click', () => setDateFilter(''));
+$('dateFilter')?.addEventListener('change', e => setDateFilter(e.target.value));
+paintDateBar();
 function renderSavedOrders() {
   const host = $('savedOrdersList');
 
+   const shown = savedOrders.filter(order => matchesDate(order.createdAt));
+
   $('savedOrdersSubtitle').textContent =
-    `${savedOrders.length} saved orders`;
+    shown.length === savedOrders.length
+      ? `${savedOrders.length} saved orders`
+      : `${shown.length} of ${savedOrders.length} saved orders`;
 
   if ($('tabLocalCount')) $('tabLocalCount').textContent = savedOrders.length;
 
-  if (!savedOrders.length) {
+    if (!shown.length) {
     host.innerHTML = `
       <div class="empty">
-        <strong>No saved orders</strong>
-        <span>Save an order from your cart.</span>
+        <strong>${savedOrders.length ? 'No orders on this date' : 'No saved orders'}</strong>
+        <span>${savedOrders.length ? 'Press "All" to see every date.' : 'Save an order from your cart.'}</span>
       </div>
     `;
     return;
   }
 
-  host.innerHTML = savedOrders.map(order => `
+    host.innerHTML = shown.map(order => `
     <div class="saved-order-card" data-saved-id="${esc(order.id)}">
 
       <div class="saved-order-info">
-        <strong>${esc(savedTitle(order))}</strong>
+                <div class="server-card-title">
+          <strong>${esc(savedTitle(order))}</strong>
+          ${typeBadge(order.customerType)}
+        </div>
         ${order.name ? `<small>${esc(order.name)}</small>` : ''}
 
         <small>
@@ -2349,7 +2398,7 @@ if (!response.ok || !result.ok) {
 
     showToast(t('sentTelegram'));
         markNoUsed('telegram', { tgRev: rev });
-   if (window.telegramSent) window.telegramSent(telegramPayment);
+   if (window.telegramSent) window.telegramSent(telegramPayment, order);
      
   } catch (error) {
     showToast(`${t('orderFailed')}: ${error.message}. ${t('sendFailedCopy')}`);
