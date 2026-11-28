@@ -2821,9 +2821,231 @@ if (settingsOverlay) {
 /* =========================================================
    16. APP STARTUP
    ========================================================= */
+/* =========================================================
+   SWIPE GESTURES (phones / tablets)
+   - Catalogue: swipe LEFT opens the cart (no swipe to Saved Orders).
+   - Cart: swipe RIGHT closes it (same as the X button).
+   - Saved Orders: the list follows your finger, swipe LEFT = Server tab,
+     swipe RIGHT = Local tab.
+   ========================================================= */
 
+function initSwipe() {
+  const MIN_DISTANCE = 70;     // px for a quick flick
+  const DRAG_COMMIT = 80;      // px for a slow drag in Saved Orders
+  const MAX_DURATION = 700;    // ms for a quick flick
+  const EDGE = 24;             // px left free for the system back gesture
+  const LOCK = 10;             // px before we decide sideways or vertical
+
+  let gesture = null;
+
+  const shown = el =>
+    !!el && !el.classList.contains('hidden') &&
+    getComputedStyle(el).display !== 'none';
+
+  function dialogOpen() {
+    return (
+      shown($('quantityPanel')) ||
+      shown($('settingsPanel')) ||
+      !!document.querySelector(
+        '#salesmanRecipientOverlay, #orderPromptOverlay, ' +
+        '#notaPopupOverlay, #invoiceNoOverlay, .swipe-block'
+      ) ||
+      ($('requesterIdentityOverlay') &&
+        $('requesterIdentityOverlay').style.display === 'flex')
+    );
+  }
+
+  // 'catalog' | 'cart' | 'saved' | '' (no swipe right now)
+  function currentMode() {
+    if (dialogOpen()) return '';
+
+    const open = Array.from(document.querySelectorAll('.cart-panel.open'));
+
+    if (!open.length) return 'catalog';
+    if (open.length === 1 && open[0].id === 'savedOrdersPanel') return 'saved';
+    if (open.length === 1 && open[0].id === 'cartPanel') return 'cart';
+    return '';
+  }
+
+  function startedOnBlocked(target) {
+    if (!(target instanceof Element)) return true;
+
+    if (target.closest(
+      'input, textarea, select, [contenteditable="true"], [data-no-swipe]'
+    )) return true;
+
+    for (let el = target; el && el !== document.body; el = el.parentElement) {
+      const overflowX = getComputedStyle(el).overflowX;
+      if ((overflowX === 'auto' || overflowX === 'scroll') &&
+          el.scrollWidth > el.clientWidth + 2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* ----- Saved Orders animation helpers ----- */
+
+  const onServerTab = () => $('tabServer').classList.contains('is-active');
+  const activePane = () =>
+    onServerTab() ? $('serverOrdersPane') : $('savedOrdersList');
+
+  function setPane(el, x, opacity, ms) {
+    el.style.transition = ms
+      ? `transform ${ms}ms ease, opacity ${ms}ms ease` : 'none';
+    el.style.transform = x ? `translateX(${x}px)` : '';
+    el.style.opacity = opacity;
+  }
+
+  function clearPane(el) {
+    el.style.transition = '';
+    el.style.transform = '';
+    el.style.opacity = '';
+  }
+
+  function springBack(el) {
+    setPane(el, 0, '1', 180);
+    setTimeout(() => clearPane(el), 200);
+  }
+
+  function switchTabAnimated(pane, direction) {
+    const width = pane.offsetWidth || 320;
+    const out = direction < 0 ? -width : width;
+
+    setPane(pane, out, '0', 150);              // slide the old list away
+
+    setTimeout(() => {
+      clearPane(pane);
+      $(direction < 0 ? 'tabServer' : 'tabLocal').click();
+
+      const next = activePane();               // the list that is now visible
+      setPane(next, direction < 0 ? 70 : -70, '0', 0);
+      void next.offsetWidth;                   // apply the start position
+      setPane(next, 0, '1', 200);              // slide the new list in
+      setTimeout(() => clearPane(next), 220);
+    }, 150);
+  }
+
+  /* ----- touch handling ----- */
+
+  document.addEventListener('touchstart', event => {
+    gesture = null;
+
+    if (event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+
+    if (touch.clientX < EDGE || touch.clientX > window.innerWidth - EDGE) return;
+    if (startedOnBlocked(event.target)) return;
+
+    const mode = currentMode();
+    if (!mode) return;
+
+    gesture = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now(),
+      mode,
+      axis: '',
+      pane: mode === 'saved' ? activePane() : null
+    };
+  }, { passive: true });
+
+  document.addEventListener('touchmove', event => {
+    if (!gesture) return;
+
+    if (event.touches.length > 1) {          // two fingers: give up
+      if (gesture.pane) springBack(gesture.pane);
+      gesture = null;
+      return;
+    }
+
+    const touch = event.touches[0];
+    const dx = touch.clientX - gesture.x;
+    const dy = touch.clientY - gesture.y;
+
+    if (!gesture.axis) {
+      if (Math.abs(dx) < LOCK && Math.abs(dy) < LOCK) return;
+      gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.5 ? 'x' : 'y';
+    }
+
+    if (gesture.axis !== 'x' || gesture.mode !== 'saved') return;
+
+    // Saved Orders: the list follows the finger
+    if (event.cancelable) event.preventDefault();
+
+    const pastEdge = onServerTab() ? dx < 0 : dx > 0;   // nothing further that way
+    const shift = pastEdge ? dx * 0.25 : dx * 0.9;
+
+    setPane(gesture.pane, shift, String(1 - Math.min(Math.abs(shift) / 500, 0.35)), 0);
+  }, { passive: false });
+
+  document.addEventListener('touchcancel', () => {
+    if (gesture && gesture.pane) springBack(gesture.pane);
+    gesture = null;
+  }, { passive: true });
+
+  document.addEventListener('touchend', event => {
+    if (!gesture) return;
+
+    const g = gesture;
+    gesture = null;
+
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - g.x;
+    const dy = touch.clientY - g.y;
+    const time = Date.now() - g.time;
+    const sideways = Math.abs(dx) > Math.abs(dy) * 1.8;
+    const left = dx < 0;
+
+    if (currentMode() !== g.mode) {
+      if (g.pane) clearPane(g.pane);
+      return;
+    }
+
+    if (g.mode === 'saved') {
+      if (g.axis !== 'x') return;
+
+      const target = left ? 'tabServer' : 'tabLocal';
+      const alreadyThere = $(target).classList.contains('is-active');
+      const speed = Math.abs(dx) / Math.max(time, 1);
+
+      const commit = !alreadyThere && sideways &&
+        (Math.abs(dx) >= DRAG_COMMIT || (Math.abs(dx) >= 40 && speed > 0.4));
+
+      if (commit) switchTabAnimated(g.pane, left ? -1 : 1);
+      else springBack(g.pane);
+      return;
+    }
+
+    // Quick flick rules for catalogue and cart
+    if (time > MAX_DURATION || Math.abs(dx) < MIN_DISTANCE || !sideways) return;
+
+    if (g.mode === 'catalog') {
+      if (window.matchMedia('(min-width: 1000px)').matches) return; // cart is a side column
+      if (!left) return;
+
+      // Chrome ignores a history entry added before the page was ever tapped,
+      // which would make Back skip the cart.
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+        showToast('Tap the page once, then swipe');
+        return;
+      }
+
+      openCart();
+      return;
+    }
+
+    if (g.mode === 'cart' && !left) closeCart();
+  }, { passive: true });
+
+  // Lets the lists slide sideways without spilling out of the panel
+  const savedPanel = $('savedOrdersPanel');
+  if (savedPanel) savedPanel.style.overflowX = 'hidden';
+}
 function initializeApp() {
   bindEvents();
+    initSwipe();
   applyLanguage();
   ensureRequesterIdentity();
 
