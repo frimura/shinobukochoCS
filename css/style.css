@@ -2560,3 +2560,40 @@ main {
   .bottom-nav button { font-size: 10px; }
   .bottom-nav button .nav-label { font-size: 10px; }
 }
+/* Customer type badge (next to the invoice number) */
+.type-badge {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .3px;
+}
+.type-badge.wa      { background: #dcf8e6; color: #0f7a3e; }
+.type-badge.p3d     { background: #f3e8ff; color: #7e22ce; }
+.type-badge.offline { background: #ffe4e6; color: #be123c; }
+
+/* Date filter bar */
+.date-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 10px 16px 0;
+}
+.date-bar button,
+.date-bar input {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.date-bar button.is-active {
+  border-color: var(--green);
+  background: #e8f5ef;
+  color: var(--green-dark);
+}
+.doc-tag.jb { background: #dcfce7; color: #166534; }
